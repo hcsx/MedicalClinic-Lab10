@@ -1,1 +1,354 @@
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.stream.Collectors;
 
+public class MedicalClinicExtended {
+
+    // 1. Interfaces & Base Classes
+
+    // Original interface from List 9
+    interface Treatable {
+        void receiveTreatment();
+    }
+
+    // New Interface required by Lab 10 Task 1.4
+    interface IClinicManager {
+        void addAppointment(Patient patient, Doctor doctor, LocalDateTime dateTime);
+        void displayPatientAppointments(Patient patient);
+        void displayDoctorCalendar(Doctor doctor);
+        void createAndAddPrescription(Doctor doctor, Patient patient, List<Treatment> treatments);
+        void displayPatientPrescriptions(Patient patient);
+        void displayPatientsWithMedicine(String medicineName);
+    }
+
+    // Base Abstract Class
+    static abstract class Person {
+        protected String name;
+        protected int age;
+
+        public Person(String name, int age) {
+            this.name = name;
+            this.age = age;
+        }
+
+        public String getName() { return name; }
+        public abstract void introduce();
+    }
+
+    // 2. Domain Models (New/Modified)
+
+    // Task 1.1: Treatment and Medicine
+    static class Treatment {
+        protected String description;
+
+        public Treatment(String description) {
+            this.description = description;
+        }
+
+        @Override
+        public String toString() { return description; }
+    }
+
+    static class Medicine extends Treatment {
+        public Medicine(String name, String dosage) {
+            super("Medicine: " + name + " (" + dosage + ")");
+        }
+
+        // Helper to check medicine name strictly
+        public boolean isMedicineName(String queryName) {
+            return this.description.toLowerCase().contains(queryName.toLowerCase());
+        }
+    }
+
+    // Task 1.1: Appointment
+    static class Appointment {
+        private LocalDateTime dateTime;
+        private Doctor doctor;
+        private Patient patient;
+
+        public Appointment(LocalDateTime dateTime, Doctor doctor, Patient patient) {
+            this.dateTime = dateTime;
+            this.doctor = doctor;
+            this.patient = patient;
+        }
+
+        public LocalDateTime getDateTime() { return dateTime; }
+        public Doctor getDoctor() { return doctor; }
+        public Patient getPatient() { return patient; }
+
+        @Override
+        public String toString() {
+            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
+            return "Appointment on " + dateTime.format(formatter) +
+                    " | Dr. " + doctor.getName() +
+                    " | Patient: " + patient.getName();
+        }
+    }
+
+    // Task 1.1: Prescription
+    static class Prescription {
+        private Doctor doctor;
+        private Patient patient;
+        private List<Treatment> treatments;
+        private LocalDateTime dateIssued;
+
+        public Prescription(Doctor doctor, Patient patient, List<Treatment> treatments) {
+            this.doctor = doctor;
+            this.patient = patient;
+            this.treatments = treatments;
+            this.dateIssued = LocalDateTime.now();
+        }
+
+        public List<Treatment> getTreatments() { return treatments; }
+        public Doctor getDoctor() { return doctor; }
+
+        @Override
+        public String toString() {
+            return "Prescription by Dr. " + doctor.getName() + " for " + patient.getName() +
+                    "\nItems: " + treatments.toString();
+        }
+    }
+
+    // 3. Actors (Patient & Staff)
+
+    static class Patient extends Person implements Treatable {
+        private String condition;
+        // Task 1.1: Patient has multiple prescriptions and appointments
+        private List<Appointment> appointments = new ArrayList<>();
+        private List<Prescription> prescriptions = new ArrayList<>();
+
+        public Patient(String name, int age, String condition) {
+            super(name, age);
+            this.condition = condition;
+        }
+
+        public void addAppointment(Appointment appt) {
+            this.appointments.add(appt);
+        }
+
+        public void addPrescription(Prescription p) {
+            this.prescriptions.add(p);
+        }
+
+        public List<Appointment> getAppointments() { return appointments; }
+        public List<Prescription> getPrescriptions() { return prescriptions; }
+
+        @Override
+        public void receiveTreatment() {
+            System.out.println("Patient " + name + " is receiving treatment for: " + condition);
+        }
+
+        @Override
+        public void introduce() {
+            System.out.println("Hi, I am patient " + name + ".");
+        }
+    }
+
+    static abstract class Staff extends Person {
+        protected String role;
+
+        public Staff(String name, int age, String role) {
+            super(name, age);
+            this.role = role;
+        }
+
+        public abstract void performDuties();
+    }
+
+    static class Doctor extends Staff {
+        // Task 1.1: Doctor has multiple appointments
+        private List<Appointment> schedule = new ArrayList<>();
+
+        public Doctor(String name, int age) {
+            super(name, age, "Doctor");
+        }
+
+        // Task 1.1: Validation to prevent overlapping
+        public boolean isSlotAvailable(LocalDateTime newTime) {
+            for (Appointment appt : schedule) {
+                // Assuming an appointment takes 30 minutes for simplicity
+                LocalDateTime existingTime = appt.getDateTime();
+                if (existingTime.isEqual(newTime)) {
+                    return false; // Exact match collision
+                }
+                // Optional: extended collision logic (e.g. within 30 mins)
+                // For this lab, checking exact start time is usually sufficient unless specified otherwise
+            }
+            return true;
+        }
+
+        public void addAppointmentToSchedule(Appointment appt) {
+            this.schedule.add(appt);
+        }
+
+        public List<Appointment> getSchedule() { return schedule; }
+
+        @Override
+        public void performDuties() {
+            System.out.println("Dr. " + name + " is examining patients.");
+        }
+
+        @Override
+        public void introduce() {
+            System.out.println("Hi, I am Dr. " + name + ".");
+        }
+    }
+
+    static class Receptionist extends Staff {
+        public Receptionist(String name, int age) {
+            super(name, age, "Receptionist");
+        }
+
+        @Override
+        public void performDuties() {
+            System.out.println(name + " is scheduling appointments.");
+        }
+
+        @Override
+        public void introduce() {
+            System.out.println("Hi, I am " + name + " (Receptionist).");
+        }
+    }
+
+    //  4. System Implementation (The Manager)
+
+    // Task 1.4: Implementing the interface
+    static class ClinicSystem implements IClinicManager {
+        // We keep a list of all patients to facilitate searches
+        private List<Patient> allPatients = new ArrayList<>();
+
+        public void registerPatient(Patient p) {
+            allPatients.add(p);
+        }
+
+        @Override
+        public void addAppointment(Patient patient, Doctor doctor, LocalDateTime dateTime) {
+            // Check constraints
+            if (!doctor.isSlotAvailable(dateTime)) {
+                System.out.println("ERROR: Dr. " + doctor.getName() + " is busy at " + dateTime);
+                return;
+            }
+
+            Appointment appt = new Appointment(dateTime, doctor, patient);
+            doctor.addAppointmentToSchedule(appt);
+            patient.addAppointment(appt);
+            System.out.println("SUCCESS: Appointment scheduled for " + patient.getName() +
+                    " with Dr. " + doctor.getName());
+        }
+
+        @Override
+        public void displayPatientAppointments(Patient patient) {
+            System.out.println("\n--- Appointments for " + patient.getName() + " ---");
+            if (patient.getAppointments().isEmpty()) {
+                System.out.println("No appointments found.");
+            } else {
+                for (Appointment appt : patient.getAppointments()) {
+                    System.out.println(appt);
+                }
+            }
+        }
+
+        @Override
+        public void displayDoctorCalendar(Doctor doctor) {
+            System.out.println("\n--- Calendar for Dr. " + doctor.getName() + " ---");
+            if (doctor.getSchedule().isEmpty()) {
+                System.out.println("No appointments scheduled.");
+            } else {
+                // Sorting for better display
+                doctor.getSchedule().sort((a, b) -> a.getDateTime().compareTo(b.getDateTime()));
+                for (Appointment appt : doctor.getSchedule()) {
+                    System.out.println(appt);
+                }
+            }
+        }
+
+        @Override
+        public void createAndAddPrescription(Doctor doctor, Patient patient, List<Treatment> treatments) {
+            Prescription prescription = new Prescription(doctor, patient, treatments);
+            patient.addPrescription(prescription);
+            System.out.println("Prescription created by Dr. " + doctor.getName() + " for " + patient.getName());
+        }
+
+        @Override
+        public void displayPatientPrescriptions(Patient patient) {
+            System.out.println("\n--- Prescriptions for " + patient.getName() + " ---");
+            for (Prescription p : patient.getPrescriptions()) {
+                System.out.println(p);
+            }
+        }
+
+        // Complex Query: Task 1.4 bullet 5
+        @Override
+        public void displayPatientsWithMedicine(String medicineName) {
+            System.out.println("\n--- Patients taking " + medicineName + " ---");
+
+            // Using Streams for cleaner filtering
+            allPatients.stream()
+                    .filter(patient -> patient.getPrescriptions().stream()
+                            .flatMap(pres -> pres.getTreatments().stream()) // Flatten treatments
+                            .anyMatch(t -> t instanceof Medicine &&
+                                    ((Medicine)t).isMedicineName(medicineName)))
+                    .forEach(patient -> {
+                        // Find the doctor who prescribed it
+                        patient.getPrescriptions().stream()
+                                .filter(pres -> pres.getTreatments().stream()
+                                        .anyMatch(t -> t instanceof Medicine && ((Medicine)t).isMedicineName(medicineName)))
+                                .forEach(pres ->
+                                        System.out.println("Patient: " + patient.getName() +
+                                                " | Prescribed by: Dr. " + pres.getDoctor().getName())
+                                );
+                    });
+        }
+    }
+
+    // 5. Main Execution
+
+    public static void main(String[] args) {
+        System.out.println("=== Clinic System Extended Demo ===\n");
+
+        // 1. Setup Actors
+        Doctor docHouse = new Doctor("Gregory House", 50);
+        Doctor docWilson = new Doctor("James Wilson", 46);
+        Receptionist pam = new Receptionist("Pam Beesly", 28);
+        Patient p1 = new Patient("John Doe", 40, "Flu");
+        Patient p2 = new Patient("Alice Smith", 22, "Migraine");
+
+        // 2. Setup System
+        ClinicSystem system = new ClinicSystem();
+        system.registerPatient(p1);
+        system.registerPatient(p2);
+
+        // 3. Scheduling Appointments (Task 1.3 Staff duties)
+        System.out.println("--- Scheduling ---");
+        LocalDateTime time1 = LocalDateTime.of(2025, 12, 20, 10, 0);
+        LocalDateTime time2 = LocalDateTime.of(2025, 12, 20, 11, 0);
+
+        system.addAppointment(p1, docHouse, time1);
+        system.addAppointment(p2, docHouse, time2);
+
+        // Testing Overlap Constraint (Task 1.1)
+        System.out.println("Attempting overlapping appointment...");
+        system.addAppointment(p2, docHouse, time1); // Should fail
+
+        // 4. Prescriptions (Task 1.2 Doctor duties)
+        List<Treatment> treatments1 = new ArrayList<>();
+        treatments1.add(new Medicine("Ibuprofen", "400mg"));
+        treatments1.add(new Treatment("Rest and hydration"));
+
+        List<Treatment> treatments2 = new ArrayList<>();
+        treatments2.add(new Medicine("Vicodin", "5mg")); // House's favorite
+
+        system.createAndAddPrescription(docHouse, p1, treatments1);
+        system.createAndAddPrescription(docHouse, p2, treatments2);
+
+        // 5. Verifying Interface Output (Task 1.4)
+        system.displayDoctorCalendar(docHouse);
+        system.displayPatientAppointments(p1);
+        system.displayPatientPrescriptions(p1);
+
+        // 6. Complex Query Test
+        system.displayPatientsWithMedicine("Ibuprofen");
+    }
+}
